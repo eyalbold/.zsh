@@ -1,0 +1,67 @@
+#!/bin/zsh
+# Run `claude` in the current directory under a macOS sandbox that blocks
+# GitHub tokens, SSH keys, and ~/github.
+#
+# Blocks:
+#   - ~/.ssh                  (SSH private keys, agent socket dir, known_hosts)
+#   - ~/.config/gh            (gh CLI auth: hosts.yml has oauth_token)
+#   - ~/.gitconfig*           (git credential helpers / inline tokens)
+#   - ~/.netrc                (HTTP basic-auth tokens)
+#   - ~/github                (per user request)
+#   - ~/.aws                  (AWS credentials / config)
+#   - ~/.docker               (docker config.json with registry auth)
+#   - ~/Library/Keychains     (macOS Keychain databases)
+#   - ~/gitproj/bold*         (Bold private repos)
+# Also scrubs token-bearing env vars before exec.
+
+set -e
+
+CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
+if [ ! -x "$CLAUDE_BIN" ]; then
+  CLAUDE_BIN="$(command -v claude || true)"
+fi
+if [ -z "$CLAUDE_BIN" ] || [ ! -x "$CLAUDE_BIN" ]; then
+  echo "claude binary not found (set CLAUDE_BIN=...)" >&2
+  exit 127
+fi
+
+PROFILE="$(mktemp -t claude-sandbox.sb)"
+trap 'rm -f "$PROFILE"' EXIT
+
+cat > "$PROFILE" <<EOF
+(version 1)
+(allow default)
+
+;; Deny reads of sensitive credential locations.
+(deny file-read*
+  (subpath "$HOME/.ssh")
+  (subpath "$HOME/.config/gh")
+  (subpath "$HOME/github")
+  (subpath "$HOME/.aws")
+  (subpath "$HOME/.docker")
+  (subpath "$HOME/Library/Keychains")
+  (regex #"^$HOME/gitproj/bold*")
+  (literal "$HOME/.git-credentials")
+  (literal "$HOME/.netrc"))
+
+;; Also deny writes so a compromised process can't tamper with them.
+(deny file-write*
+  (subpath "$HOME/.ssh")
+  (subpath "$HOME/.config/gh")
+  (subpath "$HOME/github")
+  (subpath "$HOME/.aws")
+  (subpath "$HOME/.docker")
+  (subpath "$HOME/Library/Keychains")
+  (regex #"^$HOME/\.gitconfig")
+  (regex #"^$HOME/gitproj/bold*")
+  (literal "$HOME/.git-credentials")
+  (literal "$HOME/.netrc"))
+
+EOF
+
+# Strip token-bearing env vars from the child.
+unset GITHUB_TOKEN GH_TOKEN GITHUB_PAT \
+      GITHUB_API_TOKEN GH_ENTERPRISE_TOKEN \
+      SSH_AUTH_SOCK SSH_AGENT_PID
+
+ENABLE_CLAUDEAI_MCP_SERVERS=false exec /usr/bin/sandbox-exec -f "$PROFILE" "$CLAUDE_BIN" "$@"
