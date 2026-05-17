@@ -3,7 +3,7 @@
 # into the user's shell rc file.
 #
 # Run with:
-#   curl -fsSL https://raw.githubusercontent.com/eyalbold/.zsh/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/eyalbold/.zsh/refs/heads/master/install.sh | sh
 #
 # What it does:
 #   1. cd ~

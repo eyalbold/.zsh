@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Alternative to parse_quicksel.sh — instead of parsing quicksel.vim, accept
-# a plain "description<TAB>cmd" list, fzf-pick one, and run the cmd in iTerm.
+# a plain "description<TAB>cmd" list, fzf-pick one, and run the cmd in a new
+# tab of the current terminal (iTerm2 or Terminal.app — see open_in_new_tab.sh).
 #
 # Input precedence:
 #   1. Argument "-"           — read list from stdin
@@ -17,6 +18,10 @@
 #   printf 'build\tmake\ntest\tpytest\n' | quicksel_list.sh -
 
 set -euo pipefail
+
+# $CUR is exported by common.sh; fall back to this script's directory when
+# quicksel_list.sh is invoked standalone.
+: "${CUR:=$( dirname -- "${BASH_SOURCE[0]}" )}"
 
 read_input() {
     if [[ "${1:-}" == "-" ]]; then
@@ -42,10 +47,5 @@ sel=$(printf '%s\n' "$entries" \
           --preview 'echo {2}' --preview-window=down:3:wrap) || exit 0
 
 cmd=${sel#*$'\t'}
-esc=${cmd//\"/\\\"}
 
-osascript \
-    -e 'tell application "iTerm" to activate' \
-    -e 'tell application "iTerm" to if (count of windows) = 0 then create window with default profile' \
-    -e 'tell application "iTerm" to tell current window to create tab with default profile' \
-    -e "tell application \"iTerm\" to tell current session of current window to write text \"$esc\""
+"$CUR/open_in_new_tab.sh" "$cmd"

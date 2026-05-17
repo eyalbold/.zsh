@@ -14,7 +14,7 @@ bindkey -e
 bindkey '\e\e[C' forward-word
 bindkey '\e\e[D' backward-word
 bindkey -s '^X' 'QuickSelList\n'    # fuzzy-pick a command from quicksel.vim
-bindkey -s '^B' 'ClaudeZi\n'    # zoxide-pick a dir, open claude there
+bindkey -s '^B' 'ClaudeZi\n'    # fuzzy search recent folders (using zoxide), open claude there
 bindkey -s '^Y' 'TabFocus\n'    # focus a specific iTerm tab
 bindkey -s '^Q' 'zi\n'          # interactive zoxide
 
@@ -30,34 +30,30 @@ else
     SCRIPT_PATH="$0"
 fi
 CUR="$( dirname -- "$SCRIPT_PATH" )"
+export CUR
 
 
-# ClaudeZiStrong: pick a directory with zoxide+fzf, then open a new iTerm tab
-# running `claude` (the unsandboxed CLI) in that directory.
+# ClaudeZiStrong: fuzzy search recent folders (using zoxide), then open a new
+# terminal tab running `claude` (the unsandboxed CLI) in that directory.
 function ClaudeZiStrong() {
-    local dir esc cmd
+    local dir
     dir=$(zoxide query -l | fzf --preview 'ls -la {}' --preview-window=right:50%:wrap) || return 0
-    cmd="cd ${(q)dir} && claude"
-    esc=${cmd//\"/\\\"}
-    osascript \
-        -e 'tell application "iTerm" to activate' \
-        -e 'tell application "iTerm" to if (count of windows) = 0 then create window with default profile' \
-        -e 'tell application "iTerm" to tell current window to create tab with default profile' \
-        -e "tell application \"iTerm\" to tell current session of current window to write text \"$esc\""
+    "$CUR/open_in_new_tab.sh" "cd ${(q)dir} && claude"
 }
 
-# ClaudeZi: same as ClaudeZiStrong but launches the sandboxed wrapper.
+# ClaudeZi: fuzzy search recent folders (using zoxide), then open a new
+# terminal tab running the sandboxed `claude-sandboxed` wrapper in that dir.
 # This is the default Claude launcher and is bound to ^B.
 function ClaudeZi() {
-    local dir esc cmd
+    local dir
     dir=$(zoxide query -l | fzf --preview 'ls -la {}' --preview-window=right:50%:wrap) || return 0
-    cmd="cd ${(q)dir} && claude-sandboxed"
-    esc=${cmd//\"/\\\"}
-    osascript \
-        -e 'tell application "iTerm" to activate' \
-        -e 'tell application "iTerm" to if (count of windows) = 0 then create window with default profile' \
-        -e 'tell application "iTerm" to tell current window to create tab with default profile' \
-        -e "tell application \"iTerm\" to tell current session of current window to write text \"$esc\""
+    "$CUR/open_in_new_tab.sh" "cd ${(q)dir} && claude-sandboxed"
+}
+
+# updateprofile: pull latest changes for this scripts repo. Run after pushing
+# updates upstream; reload the shell (`exec "$SHELL" -l`) to pick them up.
+function updateprofile() {
+    ( cd "$CUR" && git pull )
 }
 
 # ci: open the claude history picker (-g = global / across projects).
@@ -73,6 +69,31 @@ function TabFocus() {
 # alllisten: list every listening TCP socket on the machine (needs sudo).
 function alllisten() {
     sudo lsof -nP -iTCP -sTCP:LISTEN
+}
+
+# killport <port> [-9|--force]
+# Kill every process listening on <port>. Default signal is TERM; pass -9
+# (or --force) for SIGKILL. Returns non-zero if nothing was listening.
+function killport() {
+    local port="$1"
+    local sig=TERM
+    case "$2" in
+        -9|--force|force|kill) sig=KILL ;;
+        "") ;;
+        *) echo "killport: unknown flag '$2'" >&2; return 2 ;;
+    esac
+    if [ -z "$port" ]; then
+        echo "usage: killport <port> [-9|--force]" >&2
+        return 1
+    fi
+    local pids
+    pids=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null)
+    if [ -z "$pids" ]; then
+        echo "killport: no process listening on port $port" >&2
+        return 1
+    fi
+    echo "killport: SIG$sig -> $(echo $pids | tr '\n' ' ')"
+    echo "$pids" | xargs kill -"$sig"
 }
 
 # QuickSel: fuzzy-pick a command from ~/temp/quicksel.vim and run it in a new

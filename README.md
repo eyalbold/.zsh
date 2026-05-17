@@ -7,18 +7,24 @@ Shell helpers sourced from `~/.bashrc` / `~/.zshrc` via `common.sh`, plus a coup
 | File | Kind | Purpose |
 | --- | --- | --- |
 | `common.sh` | sourced | Aliases, keybindings, and helper functions for the interactive shell. |
-| `parse_quicksel.sh` | executable | Parses `~/temp/quicksel.vim` into a name⇥cmd table and runs the picked command in iTerm. |
-| `quicksel_list.sh` | executable | Same picker UX as `parse_quicksel.sh`, but reads a plain `description⇥cmd` list instead. |
-| `iterm2-tab-focus.sh` | executable | Switch focus to a specific iTerm tab (bound to `^Y`). |
 | `claude-sandboxed` | executable | Sandboxed wrapper around the Claude Code CLI (aliased to `cl` / `cc`). |
 | `install.sh` | executable | One-shot installer — clones the repo to `~/scripts` and wires `common.sh` into the user's shell rc. |
 
 ## Installation
 
-One-liner:
+Six-liner:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/eyalbold/.zsh/main/install.sh | sh
+## Pre-req zoxide
+curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+echo 'eval "$(zoxide init zsh)"' >> ~/.zshrc
+
+## Pre-req fzf 
+brew install fzf
+
+## Actual installer
+
+curl -fsSL https://raw.githubusercontent.com/eyalbold/.zsh/refs/heads/master/install.sh | sh
 ```
 
 The installer:
@@ -37,7 +43,7 @@ git clone https://github.com/eyalbold/.zsh.git ~/scripts
 echo '. ~/scripts/common.sh' >> ~/.zshrc   # or ~/.bashrc
 ```
 
-`common.sh` auto-detects its own directory, so sibling scripts (`parse_quicksel.sh`, `quicksel_list.sh`, `iterm2-tab-focus.sh`) are found regardless of how the file is sourced.
+`common.sh` auto-detects its own directory and exports it as `$CUR`, so sibling scripts (`parse_quicksel.sh`, `quicksel_list.sh`, `open_in_new_tab.sh`, `iterm2-tab-focus.sh`) are found regardless of how the file is sourced.
 
 ## Aliases
 
@@ -51,16 +57,16 @@ echo '. ~/scripts/common.sh' >> ~/.zshrc   # or ~/.bashrc
 | Chord | Widget | Effect |
 | --- | --- | --- |
 | `Alt+→` / `Alt+←` | `forward-word` / `backward-word` | Word-wise cursor motion. |
-| `^X` | `QuickSelList` | Fuzzy-pick from `~/temp/quicksel_list.tsv` and run in a new iTerm tab. |
-| `^B` | `ClaudeZi` | Pick a directory with zoxide+fzf, open `claude-sandboxed` there. |
+| `^X` | `QuickSelList` | Fuzzy-pick from `~/temp/quicksel_list.tsv` and run in a new terminal tab. |
+| `^B` | `ClaudeZi` | Fuzzy search recent folders (using zoxide), open `claude-sandboxed` there. |
 | `^Y` | `TabFocus` | Invoke the iTerm tab-focus helper. |
-| `^Q` | `zi` | zoxide interactive directory jump. |
+| `^Q` | `zi` | Fuzzy search recent folders (using zoxide) and `cd` there. |
 
 ## Functions
 
 ### Claude launchers
-- **`ClaudeZi`** — zoxide+fzf pick a directory → new iTerm tab running `claude-sandboxed`. Default launcher, bound to `^B`.
-- **`ClaudeZiStrong`** — same but launches the unsandboxed `claude`.
+- **`ClaudeZi`** — fuzzy search recent folders (using zoxide) → new terminal tab running `claude-sandboxed`. Default launcher, bound to `^B`.
+- **`ClaudeZiStrong`** — fuzzy search recent folders (using zoxide) → new terminal tab running the unsandboxed `claude`.
 - **`ci`** — open `claude-history -g` (global history picker).
 
 ### Command pickers
@@ -68,7 +74,8 @@ echo '. ~/scripts/common.sh' >> ~/.zshrc   # or ~/.bashrc
 - **`QuickSelListExample`** — demo that pipes two entries into `QuickSelList`.
 
 ### Misc
-- **`TabFocus`** — runs `iterm2-tab-focus.sh`.
+- **`updateprofile`** — `git pull` in `~/scripts` to fetch the latest version of this repo. Run `exec "$SHELL" -l` afterwards to pick up changes.
+- **`TabFocus`** — runs `iterm2-tab-focus.sh` (iTerm2 only).
 - **`alllisten`** — `sudo lsof -nP -iTCP -sTCP:LISTEN` — every listening TCP socket on the machine.
 - **`ed <file> [line]`** — open file (optionally at line N) in the running `nvim-qt` instance via `nvr`. Reads servername from `~/temp/listen.txt`; falls back to `$qtpath` if nvr fails.
 
@@ -91,5 +98,12 @@ Input precedence (first match wins):
 4. `~/temp/quicksel_list.tsv` (default).
 
 You can try it by running `QuickSelListExample`. 
-Pick an entry in fzf → the command runs in a new iTerm tab (a fresh window is created if none exist).
+Pick an entry in fzf → the command runs in a new tab of the current terminal app (iTerm2 or macOS Terminal.app; dispatched via `$TERM_PROGRAM` by `open_in_new_tab.sh`).
+
+### more files 
+
+| `parse_quicksel.sh` | executable | Parses `~/temp/quicksel.vim` into a name⇥cmd table and runs the picked command in a new terminal tab. |
+| `quicksel_list.sh` | executable | Same picker UX as `parse_quicksel.sh`, but reads a plain `description⇥cmd` list instead. |
+| `open_in_new_tab.sh` | executable | Helper used by the launchers above — opens a command in a new tab of the current terminal app (iTerm2 or Terminal.app, dispatched via `$TERM_PROGRAM`). |
+| `iterm2-tab-focus.sh` | executable | Switch focus to a specific iTerm tab (bound to `^Y`). iTerm2 only. |
 

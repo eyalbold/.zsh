@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Parse quicksel.vim into "name: command" lines, fzf-pick one, run it in iTerm
-# (matching the original osascript behavior).
+# Parse quicksel.vim into "name: command" lines, fzf-pick one, run it in a new
+# tab of the current terminal (iTerm2 or Terminal.app — see open_in_new_tab.sh).
 
 set -euo pipefail
+
+# $CUR is exported by common.sh; fall back to this script's directory when
+# parse_quicksel.sh is invoked standalone.
+: "${CUR:=$( dirname -- "${BASH_SOURCE[0]}" )}"
 
 file="${QUICKSEL_FILE:-$HOME/temp/quicksel.vim}"
 [[ -f "$file" ]] || { echo "no file: $file" >&2; exit 1; }
@@ -33,11 +37,4 @@ fi
 sel=$(parse | fzf --with-nth=1 --delimiter=$'\t' --preview 'echo {2}' --preview-window=down:3:wrap) || exit 0
 cmd=${sel#*$'\t'}
 
-# escape double-quotes for embedding in the AppleScript string
-esc=${cmd//\"/\\\"}
-
-osascript \
-    -e 'tell application "iTerm" to activate' \
-    -e 'tell application "iTerm" to if (count of windows) = 0 then create window with default profile' \
-    -e 'tell application "iTerm" to tell current window to create tab with default profile' \
-    -e "tell application \"iTerm\" to tell current session of current window to write text \"$esc\""
+"$CUR/open_in_new_tab.sh" "$cmd"
