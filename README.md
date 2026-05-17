@@ -43,7 +43,7 @@ git clone https://github.com/eyalbold/.zsh.git ~/scripts
 echo '. ~/scripts/common.sh' >> ~/.zshrc   # or ~/.bashrc
 ```
 
-`common.sh` auto-detects its own directory and exports it as `$CUR`, so sibling scripts (`parse_quicksel.sh`, `quicksel_list.sh`, `open_in_new_tab.sh`, `iterm2-tab-focus.sh`) are found regardless of how the file is sourced.
+`common.sh` auto-detects its own directory and exports it as `$SCRIPTDIR`, so sibling scripts (`parse_quicksel.sh`, `quicksel_list.sh`, `open_in_new_tab.sh`, `iterm2-tab-focus.sh`) are found regardless of how the file is sourced.
 
 ## Aliases
 
@@ -77,7 +77,7 @@ echo '. ~/scripts/common.sh' >> ~/.zshrc   # or ~/.bashrc
 - **`updateprofile`** — `git pull` in `~/scripts` to fetch the latest version of this repo. Run `exec "$SHELL" -l` afterwards to pick up changes.
 - **`TabFocus`** — runs `iterm2-tab-focus.sh` (iTerm2 only).
 - **`alllisten`** — `sudo lsof -nP -iTCP -sTCP:LISTEN` — every listening TCP socket on the machine.
-- **`ed <file> [line]`** — open file (optionally at line N) in the running `nvim-qt` instance via `nvr`. Reads servername from `~/temp/listen.txt`; falls back to `$qtpath` if nvr fails.
+- **`ed <file> [line]`** — open file (optionally at line N) in the running `nvim-qt` instance via `nvr`. Reads servername from `~/temp/listen.txt`; falls back to `$qtpath` if nvr fails. (Requires some nvim profile adjustments; probably won't work out of the box.)
 
 ## QuickSel list format
 
@@ -100,8 +100,10 @@ Input precedence (first match wins):
 You can try it by running `QuickSelListExample`. 
 Pick an entry in fzf → the command runs in a new tab of the current terminal app (iTerm2 or macOS Terminal.app; dispatched via `$TERM_PROGRAM` by `open_in_new_tab.sh`).
 
-### more files 
+## Script Files
 
+| File | Kind | Purpose |
+| --- | --- | --- |
 | `parse_quicksel.sh` | executable | Parses `~/temp/quicksel.vim` into a name⇥cmd table and runs the picked command in a new terminal tab. |
 | `quicksel_list.sh` | executable | Same picker UX as `parse_quicksel.sh`, but reads a plain `description⇥cmd` list instead. |
 | `open_in_new_tab.sh` | executable | Helper used by the launchers above — opens a command in a new tab of the current terminal app (iTerm2 or Terminal.app, dispatched via `$TERM_PROGRAM`). |

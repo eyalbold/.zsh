@@ -4,9 +4,9 @@
 
 set -euo pipefail
 
-# $CUR is exported by common.sh; fall back to this script's directory when
+# $SCRIPTDIR is exported by common.sh; fall back to this script's directory when
 # parse_quicksel.sh is invoked standalone.
-: "${CUR:=$( dirname -- "${BASH_SOURCE[0]}" )}"
+: "${SCRIPTDIR:=$( dirname -- "${BASH_SOURCE[0]}" )}"
 
 file="${QUICKSEL_FILE:-$HOME/temp/quicksel.vim}"
 [[ -f "$file" ]] || { echo "no file: $file" >&2; exit 1; }
@@ -37,4 +37,4 @@ fi
 sel=$(parse | fzf --with-nth=1 --delimiter=$'\t' --preview 'echo {2}' --preview-window=down:3:wrap) || exit 0
 cmd=${sel#*$'\t'}
 
-"$CUR/open_in_new_tab.sh" "$cmd"
+"$SCRIPTDIR/open_in_new_tab.sh" "$cmd"

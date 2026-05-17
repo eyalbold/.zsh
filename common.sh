@@ -29,8 +29,8 @@ else
     # sh/dash fallback — only correct if the script is executed, not sourced.
     SCRIPT_PATH="$0"
 fi
-CUR="$( dirname -- "$SCRIPT_PATH" )"
-export CUR
+SCRIPTDIR="$( dirname -- "$SCRIPT_PATH" )"
+export SCRIPTDIR
 
 
 # ClaudeZiStrong: fuzzy search recent folders (using zoxide), then open a new
@@ -38,7 +38,7 @@ export CUR
 function ClaudeZiStrong() {
     local dir
     dir=$(zoxide query -l | fzf --preview 'ls -la {}' --preview-window=right:50%:wrap) || return 0
-    "$CUR/open_in_new_tab.sh" "cd ${(q)dir} && claude"
+    "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)dir} && claude"
 }
 
 # ClaudeZi: fuzzy search recent folders (using zoxide), then open a new
@@ -47,13 +47,13 @@ function ClaudeZiStrong() {
 function ClaudeZi() {
     local dir
     dir=$(zoxide query -l | fzf --preview 'ls -la {}' --preview-window=right:50%:wrap) || return 0
-    "$CUR/open_in_new_tab.sh" "cd ${(q)dir} && claude-sandboxed"
+    "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)dir} && claude-sandboxed"
 }
 
 # updateprofile: pull latest changes for this scripts repo. Run after pushing
 # updates upstream; reload the shell (`exec "$SHELL" -l`) to pick them up.
 function updateprofile() {
-    ( cd "$CUR" && git pull )
+    ( cd "$SCRIPTDIR" && git pull )
 }
 
 # ci: open the claude history picker (-g = global / across projects).
@@ -63,7 +63,7 @@ function ci {
 
 # TabFocus: delegate to the iTerm tab-switcher helper (bound to ^Y).
 function TabFocus() {
-    $CUR/iterm2-tab-focus.sh
+    $SCRIPTDIR/iterm2-tab-focus.sh
 }
 
 # alllisten: list every listening TCP socket on the machine (needs sudo).
@@ -102,12 +102,12 @@ function killport() {
 # For a simpler alternative that takes a description<TAB>cmd list directly,
 # see quicksel_list.sh.
 function QuickSel() {
-    sh $CUR/parse_quicksel.sh
+    sh $SCRIPTDIR/parse_quicksel.sh
 }
 
 function QuickSelListExample()
 {
-echo -e "build\tmake -j8\ntest\tpytest -x" | QuickSelList
+echo -e "build\tmake -j8\ntest\tpytest -x\nuse claude in user folder\tcd ~ && claude" | QuickSelList
 }
 
 # QuickSelList: fuzzy-pick a command from csv (default: ~/temp/quicksel_list.tsv) that contains description\tcmd.
@@ -116,9 +116,9 @@ echo -e "build\tmake -j8\ntest\tpytest -x" | QuickSelList
 #
 function QuickSelList() {
     if [ -t 0 ]; then
-        sh $CUR/quicksel_list.sh
+        sh $SCRIPTDIR/quicksel_list.sh
     else
-        sh $CUR/quicksel_list.sh -
+        sh $SCRIPTDIR/quicksel_list.sh -
     fi
 }
 

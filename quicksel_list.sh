@@ -19,9 +19,9 @@
 
 set -euo pipefail
 
-# $CUR is exported by common.sh; fall back to this script's directory when
+# $SCRIPTDIR is exported by common.sh; fall back to this script's directory when
 # quicksel_list.sh is invoked standalone.
-: "${CUR:=$( dirname -- "${BASH_SOURCE[0]}" )}"
+: "${SCRIPTDIR:=$( dirname -- "${BASH_SOURCE[0]}" )}"
 
 read_input() {
     if [[ "${1:-}" == "-" ]]; then
@@ -48,4 +48,4 @@ sel=$(printf '%s\n' "$entries" \
 
 cmd=${sel#*$'\t'}
 
-"$CUR/open_in_new_tab.sh" "$cmd"
+"$SCRIPTDIR/open_in_new_tab.sh" "$cmd"
