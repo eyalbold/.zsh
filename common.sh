@@ -68,7 +68,7 @@ function TabFocus() {
 
 # alllisten: list every listening TCP socket on the machine (needs sudo).
 function alllisten() {
-    sudo lsof -nP -iTCP -sTCP:LISTEN
+    lsof -nP -iTCP -sTCP:LISTEN
 }
 
 # killport <port> [-9|--force]
@@ -148,4 +148,37 @@ function ed() {
         fi
     fi
     osascript -e 'tell application "nvim-qt" to activate' 2>/dev/null
+}
+
+findpgid() {
+    [ -z "$1" ] && { echo "usage: findpgid <name>" >&2; return 1; }
+    # PID, PGID, comm for each match; print where pid == pgid (group leader)
+    ps -Ao pid,pgid,comm | awk -v IGNORECASE=1 -v n="$1" \
+        '$3 ~ n && $1 == $2 { print $1 }'
+}
+
+# stayawake [duration]: keep the Mac awake (prevent display, idle, and system
+# sleep) until you press Ctrl-C. Runs in the foreground so there's no leftover
+# process to clean up. Pass a duration to auto-release after it elapses —
+# accepts bare seconds or a suffixed value (Ns / Nm / Nh).
+#   stayawake          # awake until Ctrl-C
+#   stayawake 2h       # awake for 2 hours, then release
+function stayawake() {
+    local secs=0
+    if [ -n "$1" ]; then
+        case "$1" in
+            *h) secs=$(( ${1%h} * 3600 )) ;;
+            *m) secs=$(( ${1%m} * 60 )) ;;
+            *s) secs=${1%s} ;;
+            *[!0-9]*) echo "usage: stayawake [Ns|Nm|Nh]" >&2; return 2 ;;
+            *) secs=$1 ;;
+        esac
+    fi
+    if [ "$secs" -gt 0 ]; then
+        echo "stayawake: keeping Mac awake for $1 (Ctrl-C to stop early)…"
+        caffeinate -dimsu -t "$secs"
+    else
+        echo "stayawake: keeping Mac awake until Ctrl-C…"
+        caffeinate -dimsu
+    fi
 }

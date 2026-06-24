@@ -12,7 +12,12 @@ if [ $# -lt 1 ]; then
 fi
 
 cmd="$1"
-esc=${cmd//\"/\\\"}
+# AppleScript string escaping: backslash first, then double quote.
+# zsh's ${(q)} uses backslash-quoting (e.g. `\ ` for spaces), and AppleScript
+# treats `\<space>` as an unknown escape — so an unescaped `\` from the caller
+# breaks the osascript parse with "Expected ‘"’ but found unknown token."
+esc=${cmd//\\/\\\\}
+esc=${esc//\"/\\\"}
 
 case "${TERM_PROGRAM:-}" in
     Apple_Terminal)

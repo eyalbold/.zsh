@@ -77,6 +77,8 @@ echo '. ~/scripts/common.sh' >> ~/.zshrc   # or ~/.bashrc
 - **`updateprofile`** — `git pull` in `~/scripts` to fetch the latest version of this repo. Run `exec "$SHELL" -l` afterwards to pick up changes.
 - **`TabFocus`** — runs `iterm2-tab-focus.sh` (iTerm2 only).
 - **`alllisten`** — `sudo lsof -nP -iTCP -sTCP:LISTEN` — every listening TCP socket on the machine.
+- **`killport <port> [-9|--force]`** — kill every process listening on `<port>` (default signal `TERM`; `-9`/`--force` for `KILL`).
+- **`stayawake [duration]`** — keep the Mac awake (`caffeinate -dimsu`) until Ctrl-C; runs in the foreground. Pass a duration (`Ns`/`Nm`/`Nh` or bare seconds, e.g. `stayawake 2h`) to auto-release.
 - **`ed <file> [line]`** — open file (optionally at line N) in the running `nvim-qt` instance via `nvr`. Reads servername from `~/temp/listen.txt`; falls back to `$qtpath` if nvr fails. (Requires some nvim profile adjustments; probably won't work out of the box.)
 
 ## QuickSel list format
