@@ -226,3 +226,57 @@ function stayawake() {
 function zudo() {
   sudo -E zsh -c "source $HOME/.zshrc && $*"
 }
+
+# askclaude: ask Claude a one-off question and print the answer (non-interactive).
+# Uses Claude Code's print mode (`claude -p`) with Sonnet and no MCP servers
+# loaded (--strict-mcp-config with no --mcp-config = zero MCP servers). Takes the
+# question as arguments, or reads it from stdin if none are given.
+#   askclaude "what is the capital of france?"
+#   echo "summarize this" | askclaude
+#   cat file.py | askclaude "explain this code"
+function askclaude() {
+    local flags=(--model sonnet --strict-mcp-config)
+    if [ -t 0 ]; then
+        # No piped input: question must be in the arguments.
+        if [ -z "$1" ]; then
+            echo "usage: askclaude <question>   (or pipe input)" >&2
+            return 1
+        fi
+        claude -p "${flags[@]}" "$*"
+    else
+        # Piped input: prepend any arguments as instructions, then the stdin.
+        { [ -n "$*" ] && printf '%s\n\n' "$*"; cat; } | claude -p "${flags[@]}"
+    fi
+}
+
+# searchconv: search past Claude Code conversations for some text, then resume
+# the best match right here. Wraps the /search-conversations skill via print mode
+# (default model, MCPs as configured). Claude prints the matches plus two marker
+# lines (RESUME_DIR / RESUME_UUID) for the top hit, which we parse and resume
+# with `claude --resume` in the current shell.
+#   searchconv vimspector setup
+#   searchconv "that bug with the sandbox"
+function searchconv() {
+    if [ -z "$1" ]; then
+        echo "usage: searchconv <text>" >&2
+        return 1
+    fi
+
+    local out
+    out=$(claude --model opus -p "/search-conversations $* — show the matches. Then for the single most relevant match, print these two lines last, each alone and exactly in this form (the working directory and session UUID):
+RESUME_DIR: <absolute working dir>
+RESUME_UUID: <session uuid>
+If there is no good match, print 'RESUME_UUID: NONE' instead.")
+    printf '%s\n' "$out"
+
+    local dir uuid
+    dir=$(printf '%s\n' "$out"  | sed -n 's/^RESUME_DIR: *//p'  | tail -1)
+    uuid=$(printf '%s\n' "$out" | sed -n 's/^RESUME_UUID: *//p' | tail -1)
+    if [ -z "$uuid" ] || [ "$uuid" = "NONE" ]; then
+        echo "searchconv: no conversation to open" >&2
+        return 1
+    fi
+
+    echo "searchconv: resuming $uuid in ${dir:-$PWD}"
+    ( cd "${dir:-$PWD}" && claude --resume "$uuid" )
+}
