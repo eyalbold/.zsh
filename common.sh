@@ -1,23 +1,6 @@
 # common.sh — shared shell setup sourced by ~/.bashrc and ~/.zshrc.
 # Provides aliases, keybindings, and helper functions for the interactive shell.
 
-# -- Aliases ------------------------------------------------------------------
-# cl: shortcut for the sandboxed Claude Code wrapper.
-# cc: same wrapper but resumes the most recent session.
-alias cl=claude-sandboxed
-alias cc=claude-sandboxed --continue
-
-# -- Keybindings (emacs-mode in zsh) -----------------------------------------
-# Alt+Right / Alt+Left jump by word; the ^X/^B/^Y/^Q chords run named widgets
-# that invoke the functions defined below (or zoxide's interactive picker).
-bindkey -e
-bindkey '\e\e[C' forward-word
-bindkey '\e\e[D' backward-word
-bindkey -s '^X' 'QuickSelList\n'    # fuzzy-pick a command from quicksel.vim
-bindkey -s '^B' 'ClaudeZi\n'    # fuzzy search recent folders (using zoxide), open claude there
-bindkey -s '^Y' 'TabFocus\n'    # focus a specific iTerm tab
-bindkey -s '^Q' 'zi\n'          # interactive zoxide
-
 # -- Locate this script's directory ------------------------------------------
 # Needed so functions below can find sibling scripts (parse_quicksel.sh, etc.)
 # regardless of which shell sourced this file or from where.
@@ -31,6 +14,27 @@ else
 fi
 SCRIPTDIR="$( dirname -- "$SCRIPT_PATH" )"
 export SCRIPTDIR
+
+# -- Optional user config -----------------------------------------------------
+[ -f "$SCRIPTDIR/config.sh" ] && . "$SCRIPTDIR/config.sh"
+
+# -- Aliases ------------------------------------------------------------------
+# cl: shortcut for the sandboxed Claude Code wrapper.
+# cc: same wrapper but resumes the most recent session.
+alias cl=claude-sandboxed
+alias cc=claude-sandboxed --continue
+
+# -- Keybindings (emacs-mode in zsh) -----------------------------------------
+# Disabled by default. To enable, set SCRIPTS_KEYBINDINGS=1 in config.sh.
+if [ "${SCRIPTS_KEYBINDINGS:-0}" = "1" ]; then
+    bindkey -e
+    bindkey '\e\e[C' forward-word
+    bindkey '\e\e[D' backward-word
+    bindkey -s '^X' 'QuickSelList\n'    # fuzzy-pick a command from quicksel.vim
+    bindkey -s '^E' 'ClaudeZi\n'    # fuzzy search recent folders (using zoxide), open claude there
+    bindkey -s '^Y' 'TabFocus\n'    # focus a specific iTerm tab
+    bindkey -s '^Q' 'zi\n'          # interactive zoxide
+fi
 
 
 # ClaudeZiStrong: fuzzy search recent folders (using zoxide), then open a new
@@ -163,6 +167,42 @@ findpgid() {
 # accepts bare seconds or a suffixed value (Ns / Nm / Nh).
 #   stayawake          # awake until Ctrl-C
 #   stayawake 2h       # awake for 2 hours, then release
+# extmaindisplay: set the external (non-builtin) display as the main display.
+# The "main" display in macOS is whichever screen's origin is at (0,0) in the
+# global coordinate space — that's where the menu bar lives. This function
+# finds the non-builtin display and, if it isn't already main, rearranges the
+# layout so it sits at (0,0) and the builtin is offset to its right.
+function extmaindisplay() {
+    python3 - <<'PYEOF'
+import Quartz, sys
+
+err, display_ids, count = Quartz.CGGetActiveDisplayList(32, None, None)
+displays = list(display_ids[:count])
+
+external = next((d for d in displays if not Quartz.CGDisplayIsBuiltin(d)), None)
+builtin  = next((d for d in displays if     Quartz.CGDisplayIsBuiltin(d)), None)
+
+if external is None:
+    print("extmaindisplay: no external display found", file=sys.stderr)
+    sys.exit(1)
+
+if Quartz.CGDisplayIsMain(external):
+    print("extmaindisplay: external display is already main")
+    sys.exit(0)
+
+ext_w = int(Quartz.CGDisplayBounds(external).size.width)
+err, cfg = Quartz.CGBeginDisplayConfiguration(None)
+Quartz.CGConfigureDisplayOrigin(cfg, external, 0, 0)
+if builtin is not None:
+    Quartz.CGConfigureDisplayOrigin(cfg, builtin, ext_w, 0)
+err = Quartz.CGCompleteDisplayConfiguration(cfg, Quartz.kCGConfigureForSession)
+if err:
+    print(f"extmaindisplay: configuration failed (err={err})", file=sys.stderr)
+    sys.exit(1)
+print("extmaindisplay: done")
+PYEOF
+}
+
 function stayawake() {
     local secs=0
     if [ -n "$1" ]; then
@@ -181,4 +221,8 @@ function stayawake() {
         echo "stayawake: keeping Mac awake until Ctrl-C…"
         caffeinate -dimsu
     fi
+}
+
+function zudo() {
+  sudo -E zsh -c "source $HOME/.zshrc && $*"
 }
