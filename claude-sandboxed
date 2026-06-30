@@ -3,7 +3,7 @@
 # GitHub tokens, SSH keys, and ~/github.
 #
 # Blocks:
-#   - ~/.ssh                  (SSH private keys, agent socket dir, known_hosts)
+#   - ~/.ssh                  (SSH private keys, agent socket dir; known_hosts allowed)
 #   - ~/.config/gh            (gh CLI auth: hosts.yml has oauth_token)
 #   - ~/.gitconfig*           (git credential helpers / inline tokens)
 #   - ~/.netrc                (HTTP basic-auth tokens)
@@ -42,6 +42,10 @@ cat > "$PROFILE" <<EOF
   (regex #"^$HOME/gitproj/bold*")
   (literal "$HOME/.git-credentials")
   (literal "$HOME/.netrc"))
+
+;; Allow known_hosts after the deny block (last-match wins in SBPL).
+(allow file-read*
+  (literal "$HOME/.ssh/known_hosts"))
 
 ;; Also deny writes so a compromised process can't tamper with them.
 (deny file-write*
