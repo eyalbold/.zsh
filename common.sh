@@ -36,6 +36,12 @@ if [ "${SCRIPTS_KEYBINDINGS:-0}" = "1" ]; then
     bindkey -s '^Q' 'zi\n'          # interactive zoxide
 fi
 
+function EnableShortcuts()
+{
+    echo 'export SCRIPTS_KEYBINDINGS=1' >> "$SCRIPTDIR/config.sh"
+}
+
+
 
 # ClaudeZiStrong: fuzzy search recent folders (using zoxide), then open a new
 # terminal tab running `claude` (the unsandboxed CLI) in that directory.
@@ -279,4 +285,116 @@ If there is no good match, print 'RESUME_UUID: NONE' instead.")
 
     echo "searchconv: resuming $uuid in ${dir:-$PWD}"
     ( cd "${dir:-$PWD}" && claude --resume "$uuid" )
+}
+
+# claude-resume: resume a Claude Code conversation by session id, from any dir.
+# Claude scopes `claude --resume` to the current project directory, so we locate
+# the transcript for <id> under ~/.claude/projects, read its recorded working
+# directory, and resume from there. Accepts a full session id or a unique prefix.
+# Extra args pass through to claude, e.g. `claude-resume <id> --model opus`.
+#   claude-resume 6c072c4c-2a4b-4c43-a2b9-12389f66df5f
+function claude-resume() {
+    local id="$1"
+    local projects="$HOME/.claude/projects"
+    if [ -z "$id" ]; then
+        echo "usage: claude-resume <session-id>" >&2
+        return 1
+    fi
+
+    # Find the transcript: exact <id>.jsonl first, else fall back to a prefix.
+    local matches count
+    matches=$(find "$projects" -type f -name "$id.jsonl" 2>/dev/null)
+    [ -z "$matches" ] && matches=$(find "$projects" -type f -name "$id*.jsonl" 2>/dev/null)
+    count=$(printf '%s' "$matches" | grep -c .)
+
+    if [ "$count" -eq 0 ]; then
+        echo "claude-resume: no session found for id: $id" >&2
+        return 1
+    elif [ "$count" -gt 1 ]; then
+        echo "claude-resume: ambiguous id '$id' matches $count sessions:" >&2
+        printf '%s\n' "$matches" | while read -r m; do
+            echo "  $(basename "$m" .jsonl)" >&2
+        done
+        return 1
+    fi
+
+    local file sid dir
+    file="$matches"
+    sid=$(basename "$file" .jsonl)
+
+    # Recorded working directory (more reliable than decoding the slug, which is
+    # lossy when a real path contains '-').
+    if command -v jq >/dev/null 2>&1; then
+        dir=$(jq -r 'select(.cwd) | .cwd' "$file" 2>/dev/null | head -n1)
+    else
+        dir=$(grep -o '"cwd":"[^"]*"' "$file" | head -n1 | sed 's/^"cwd":"//; s/"$//')
+    fi
+
+    if [ -z "$dir" ]; then
+        echo "claude-resume: could not read cwd from $file" >&2
+        return 1
+    fi
+    if [ ! -d "$dir" ]; then
+        echo "claude-resume: recorded directory no longer exists: $dir" >&2
+        return 1
+    fi
+
+    echo "claude-resume: resuming $sid in $dir"
+    shift
+    ( cd "$dir" && claude --resume "$sid" "$@" )
+}
+
+function sclaude-resume() {
+    local id="$1"
+    local projects="$HOME/.claude/projects"
+    if [ -z "$id" ]; then
+        echo "usage: sclaude-resume <session-id>" >&2
+        return 1
+    fi
+
+    local matches count
+    matches=$(find "$projects" -type f -name "$id.jsonl" 2>/dev/null)
+    [ -z "$matches" ] && matches=$(find "$projects" -type f -name "$id*.jsonl" 2>/dev/null)
+    count=$(printf '%s' "$matches" | grep -c .)
+
+    if [ "$count" -eq 0 ]; then
+        echo "sclaude-resume: no session found for id: $id" >&2
+        return 1
+    elif [ "$count" -gt 1 ]; then
+        echo "sclaude-resume: ambiguous id '$id' matches $count sessions:" >&2
+        printf '%s\n' "$matches" | while read -r m; do
+            echo "  $(basename "$m" .jsonl)" >&2
+        done
+        return 1
+    fi
+
+    local file sid dir
+    file="$matches"
+    sid=$(basename "$file" .jsonl)
+
+    if command -v jq >/dev/null 2>&1; then
+        dir=$(jq -r 'select(.cwd) | .cwd' "$file" 2>/dev/null | head -n1)
+    else
+        dir=$(grep -o '"cwd":"[^"]*"' "$file" | head -n1 | sed 's/^"cwd":"//; s/"$//')
+    fi
+
+    if [ -z "$dir" ]; then
+        echo "sclaude-resume: could not read cwd from $file" >&2
+        return 1
+    fi
+    if [ ! -d "$dir" ]; then
+        echo "sclaude-resume: recorded directory no longer exists: $dir" >&2
+        return 1
+    fi
+
+    echo "sclaude-resume: resuming $sid in $dir"
+    shift
+    ( cd "$dir" && scl --resume "$sid" "$@" )
+}
+
+# reload: reset the current shell by replacing it with a fresh login shell.
+# Clears all in-memory state (functions, aliases, exported vars) and re-sources
+# config, while keeping the current working directory (exec preserves cwd).
+function reload() {
+    exec "${SHELL:-/bin/zsh}" -l
 }

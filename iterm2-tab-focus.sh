@@ -47,17 +47,42 @@ wid=${selected%%|*}
 rest=${selected#*|}
 tidx=${rest%%|*}
 
-osascript <<EOF
-tell application "iTerm2"
-    activate
-    repeat with w in windows
-        if (id of w) is $wid then
-            select w
-            tell w
-                select tab $tidx
-            end tell
-            exit repeat
-        end if
-    end repeat
-end tell
+# Focus order matters on multi-monitor setups: select the target window + tab
+# FIRST (so iTerm's current window/tab is correct), activate the app, and only
+# then raise the SPECIFIC window via System Events. `activate` alone brings
+# forward whichever window is frontmost on the current Space/display — on a
+# second monitor that's the wrong one. AXRaise targets the exact window.
+#
+# The join key is the window's top-left corner: iTerm's `bounds` top-left equals
+# System Events' `position` exactly, and (unlike the window title, which is often
+# duplicated) it is unique. wid/tidx are passed as argv, not interpolated.
+osascript - "$wid" "$tidx" <<'EOF'
+on run argv
+    set targetId to (item 1 of argv) as integer
+    set targetTab to (item 2 of argv) as integer
+    set tx to missing value
+    set ty to missing value
+    tell application "iTerm2"
+        try
+            set w to window id targetId
+        on error
+            return
+        end try
+        tell w
+            select
+            select tab targetTab
+        end tell
+        set b to bounds of w
+        set tx to item 1 of b
+        set ty to item 2 of b
+        activate
+    end tell
+    if tx is missing value then return
+    tell application "System Events" to tell process "iTerm2"
+        set frontmost to true
+        try
+            perform action "AXRaise" of (first window whose position is {tx, ty})
+        end try
+    end tell
+end run
 EOF
