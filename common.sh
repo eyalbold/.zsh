@@ -21,8 +21,8 @@ export SCRIPTDIR
 # -- Aliases ------------------------------------------------------------------
 # cl: shortcut for the sandboxed Claude Code wrapper.
 # cc: same wrapper but resumes the most recent session.
-alias cl=claude-sandboxed
-alias cc=claude-sandboxed --continue
+alias cl=claude
+alias cc=claude --continue
 
 # -- Keybindings (emacs-mode in zsh) -----------------------------------------
 # Disabled by default. To enable, set SCRIPTS_KEYBINDINGS=1 in config.sh.
@@ -52,12 +52,12 @@ function ClaudeZiStrong() {
 }
 
 # ClaudeZi: fuzzy search recent folders (using zoxide), then open a new
-# terminal tab running the sandboxed `claude-sandboxed` wrapper in that dir.
+# terminal tab running the sandboxed `claude` wrapper in that dir.
 # This is the default Claude launcher and is bound to ^B.
 function ClaudeZi() {
     local dir
     dir=$(zoxide query -l | fzf --preview 'ls -la {}' --preview-window=right:50%:wrap) || return 0
-    "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)dir} && claude-sandboxed"
+    "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)dir} && claude"
 }
 
 # updateprofile: pull latest changes for this scripts repo. Run after pushing
