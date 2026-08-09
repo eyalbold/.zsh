@@ -60,6 +60,33 @@ function ClaudeZi() {
     "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)dir} && claude"
 }
 
+# SudoRun: run a command with sudo in a NEW terminal tab, so the password prompt
+# is interactive. Useful when the caller has no TTY for sudo to prompt on — an
+# agent, a hook, a piped script — where `sudo -n` just fails with
+# "a password is required".
+#
+#   SudoRun launchctl bootstrap system /Library/LaunchDaemons/foo.plist
+#   SudoRun "cp a.plist /Library/LaunchDaemons/ && launchctl bootstrap system /Library/LaunchDaemons/a.plist"
+#
+# The new tab stays open after the command so its output and any error remain
+# readable; close it yourself.
+function SudoRun() {
+    if [ $# -eq 0 ]; then
+        echo "usage: SudoRun <command...>" >&2
+        return 2
+    fi
+    local cmd
+    if [ $# -eq 1 ]; then
+        # Single argument: already a full command line, pass through verbatim so
+        # shell operators (&&, |, redirection) keep working.
+        cmd="$1"
+    else
+        # Multiple arguments: quote each so paths with spaces survive.
+        cmd="${(j: :)${(q)@}}"
+    fi
+    "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)PWD} && sudo ${cmd}"
+}
+
 # updateprofile: pull latest changes for this scripts repo. Run after pushing
 # updates upstream; reload the shell (`exec "$SHELL" -l`) to pick them up.
 function updateprofile() {
