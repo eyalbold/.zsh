@@ -230,7 +230,7 @@ function stayawake() {
 }
 
 function zudo() {
-  sudo -E zsh -c "source $HOME/.zshrc && $*"
+  sudo -E zsh -c "source $HOME/.zshrc ; $*"
 }
 
 # askclaude: ask Claude a one-off question and print the answer (non-interactive).
@@ -397,4 +397,11 @@ function sclaude-resume() {
 # config, while keeping the current working directory (exec preserves cwd).
 function reload() {
     exec "${SHELL:-/bin/zsh}" -l
+}
+
+# introducegittreealias: install the `git tree` alias in ~/.gitconfig — a
+# one-line graph log of all refs. Run once on a new machine.
+function introducegittreealias() {
+    git config --global alias.tree "log --oneline --decorate --all --graph"
+    echo "git tree -> $(git config --global --get alias.tree)"
 }
