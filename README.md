@@ -108,6 +108,7 @@ Pick an entry in fzf → the command runs in a new tab of the current terminal a
 | --- | --- | --- |
 | `parse_quicksel.sh` | executable | Parses `~/temp/quicksel.vim` into a name⇥cmd table and runs the picked command in a new terminal tab. |
 | `quicksel_list.sh` | executable | Same picker UX as `parse_quicksel.sh`, but reads a plain `description⇥cmd` list instead. |
+| `quicksel_menu.sh` | executable | Non-interactive back end for the same list, for GUIs that render it as a native menu: `list` prints the clean description⇥cmd rows, `run <cmd>` opens one in a new tab. Used by the claude-fleet menu-bar icon. |
 | `open_in_new_tab.sh` | executable | Helper used by the launchers above — opens a command in a new tab of the current terminal app (iTerm2 or Terminal.app, dispatched via `$TERM_PROGRAM`). |
 | `iterm2-tab-focus.sh` | executable | Switch focus to a specific iTerm tab (bound to `^Y`). iTerm2 only. |
 
