@@ -22,11 +22,12 @@ export SCRIPTDIR
 # cl: shortcut for the sandboxed Claude Code wrapper.
 # cc: same wrapper but resumes the most recent session.
 alias cl=claude
-alias cc=claude --continue
+alias cc='claude --continue'
 
 # -- Keybindings (emacs-mode in zsh) -----------------------------------------
 # Disabled by default. To enable, set SCRIPTS_KEYBINDINGS=1 in config.sh.
-if [ "${SCRIPTS_KEYBINDINGS:-0}" = "1" ]; then
+# bindkey is zsh-only, so skip the whole block under bash.
+if [ "${SCRIPTS_KEYBINDINGS:-0}" = "1" ] && [ -n "$ZSH_VERSION" ]; then
     bindkey -e
     bindkey '\e\e[C' forward-word
     bindkey '\e\e[D' backward-word
@@ -68,8 +69,18 @@ function ClaudeZi() {
 #   SudoRun launchctl bootstrap system /Library/LaunchDaemons/foo.plist
 #   SudoRun "cp a.plist /Library/LaunchDaemons/ && launchctl bootstrap system /Library/LaunchDaemons/a.plist"
 #
-# The new tab stays open after the command so its output and any error remain
-# readable; close it yourself.
+# The command's combined stdout+stderr is tee'd to a log file, so it stays
+# visible in the tab AND is readable by the caller. SudoRun BLOCKS until the
+# command finishes, then prints that output on its own stdout and exits with the
+# command's status — so an agent that can't type the root password still gets the
+# result. sudo prompts on /dev/tty, so the password prompt is unaffected by the pipe.
+#
+# The new tab stays open afterwards so output remains on screen; close it yourself.
+#
+# Env:
+#   SUDORUN_TIMEOUT   seconds to wait for completion (default 300); on timeout
+#                     returns 124 after dumping whatever was logged so far.
+#   SUDORUN_LOG_DIR   log directory (default ${TMPDIR:-/tmp}/sudorun)
 function SudoRun() {
     if [ $# -eq 0 ]; then
         echo "usage: SudoRun <command...>" >&2
@@ -84,8 +95,71 @@ function SudoRun() {
         # Multiple arguments: quote each so paths with spaces survive.
         cmd="${(j: :)${(q)@}}"
     fi
-    "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)PWD} && sudo ${cmd}"
+
+    local logdir=${SUDORUN_LOG_DIR:-${TMPDIR:-/tmp}/sudorun}
+    mkdir -p "$logdir" || return 1
+    # root executes $cmdfile out of this dir, so make sure nobody else can write
+    # into it (matters only if it lands in a shared /tmp rather than a per-user
+    # TMPDIR). Bail rather than hand root a file someone else may control.
+    chmod 700 "$logdir" 2>/dev/null
+    if [ ! -O "$logdir" ]; then
+        echo "SudoRun: $logdir is not owned by you — refusing to run" >&2
+        return 1
+    fi
+    local stamp="$(date +%Y%m%d-%H%M%S)-$$"
+    local log="$logdir/$stamp.log"
+    local rcfile="$logdir/$stamp.rc"
+    local cmdfile="$logdir/$stamp.cmd"
+
+    # Stash the command in a script rather than interpolating it into the string
+    # we hand to AppleScript: it survives arbitrary quotes/backslashes untouched,
+    # and `sudo zsh <file>` runs the WHOLE command line as root. (Interpolating
+    # `sudo $cmd` instead would apply sudo only to the first command, since `&&`
+    # binds looser — `sudo a && b` runs b as the calling user.)
+    print -r -- "$cmd" > "$cmdfile" || return 1
+
+    # In the new tab: tee the combined output, then record the command's own exit
+    # status. `\${pipestatus[1]}` is escaped so the tab's shell evaluates it, and
+    # it is sudo's status rather than tee's. `sudo zsh …` is a single simple
+    # command, so the pipe captures all of it. Writing $rcfile last doubles as the
+    # completion marker — by then tee has flushed $log.
+    if ! "$SCRIPTDIR/open_in_new_tab.sh" \
+        "cd ${(q)PWD} && sudo zsh ${(q)cmdfile} 2>&1 | tee ${(q)log}; print -r -- \${pipestatus[1]} > ${(q)rcfile}"
+    then
+        # Without this check a failed osascript would leave us waiting out the
+        # whole timeout for a tab that never opened.
+        echo "SudoRun: failed to open a terminal tab — command not run" >&2
+        return 1
+    fi
+
+    # Wait for the marker to be non-empty, not merely present: `>` creates the
+    # file before the write lands, so testing -f can race and read back "".
+    local timeout=${SUDORUN_TIMEOUT:-300} waited=0
+    while [ ! -s "$rcfile" ]; do
+        if [ "$waited" -ge "$timeout" ]; then
+            echo "SudoRun: timed out after ${timeout}s (password never entered?)" >&2
+            [ -f "$log" ] && cat "$log"
+            echo "SudoRun: partial log: $log" >&2
+            return 124
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    [ -f "$log" ] && cat "$log"
+    local rc
+    rc="$(cat "$rcfile")"
+    echo "SudoRun: exit ${rc} (log: $log)" >&2
+    # Guard against a non-numeric marker (e.g. tab killed mid-write).
+    case "$rc" in
+        ''|*[!0-9]*) return 125 ;;
+        *) return "$rc" ;;
+    esac
 }
+
+# Lower-case spelling, since the function reads like a command and zsh is
+# case-sensitive.
+alias sudorun=SudoRun
 
 # updateprofile: pull latest changes for this scripts repo. Run after pushing
 # updates upstream; reload the shell (`exec "$SHELL" -l`) to pick them up.
@@ -259,16 +333,21 @@ function stayawake() {
 function zudo() {
   sudo -E zsh -c "source $HOME/.zshrc ; $*"
 }
+function zshdo() {
+     zsh -c "source $HOME/.zshrc ; $*"
+}
 
 # askclaude: ask Claude a one-off question and print the answer (non-interactive).
-# Uses Claude Code's print mode (`claude -p`) with Sonnet and no MCP servers
-# loaded (--strict-mcp-config with no --mcp-config = zero MCP servers). Takes the
-# question as arguments, or reads it from stdin if none are given.
+# Uses Claude Code's print mode (`claude -p`) with Sonnet, MCP servers as
+# configured, and --permission-mode auto so it can actually act: the auto-mode
+# classifier approves safe edits / MCP calls / bash by itself and blocks the
+# dangerous ones (nothing can prompt in print mode). Takes the question as
+# arguments, or reads it from stdin if none are given.
 #   askclaude "what is the capital of france?"
 #   echo "summarize this" | askclaude
 #   cat file.py | askclaude "explain this code"
 function askclaude() {
-    local flags=(--model sonnet --strict-mcp-config)
+    local flags=(--model sonnet --permission-mode auto)
     if [ -t 0 ]; then
         # No piped input: question must be in the arguments.
         if [ -z "$1" ]; then
@@ -296,7 +375,7 @@ function searchconv() {
     fi
 
     local out
-    out=$(claude --model opus -p "/search-conversations $* — show the matches. Then for the single most relevant match, print these two lines last, each alone and exactly in this form (the working directory and session UUID):
+    out=$(claude --model opus --effort low -p "/search-conversations $* — show the matches. Then for the single most relevant match, print these two lines last, each alone and exactly in this form (the working directory and session UUID):
 RESUME_DIR: <absolute working dir>
 RESUME_UUID: <session uuid>
 If there is no good match, print 'RESUME_UUID: NONE' instead.")
@@ -431,4 +510,28 @@ function reload() {
 function introducegittreealias() {
     git config --global alias.tree "log --oneline --decorate --all --graph"
     echo "git tree -> $(git config --global --get alias.tree)"
+}
+
+# tmuxaws: ssh into $REMOTEAWS, fuzzy-pick one of its tmux sessions, and attach.
+# Cancel the picker (Esc/^C) to back out without connecting.
+function tmuxaws() {
+    local session
+    # The remote shell re-parses the command, so '#S' must stay quoted on the
+    # far side too — otherwise '#' starts a comment and -F loses its argument.
+    session=$(ssh "$REMOTEAWS" 'tmux list-sessions -F "#S"' 2>/dev/null | fzf --prompt='tmux session> ') || return 0
+    ssh -t "$REMOTEAWS" tmux attach -t "$session"
+}
+
+# tmuxatt: fuzzy-pick one of the *local* tmux sessions and attach to it.
+# Cancel the picker (Esc/^C) to back out. Inside tmux, switches the current
+# client instead of attaching (nested attach is refused by tmux).
+function tmuxatt() {
+    local session
+    session=$(tmux list-sessions -F '#S' 2>/dev/null) || { echo "no local tmux sessions" >&2; return 1; }
+    session=$(printf '%s\n' "$session" | fzf --prompt='tmux session> ') || return 0
+    if [[ -n "$TMUX" ]]; then
+        tmux switch-client -t "$session"
+    else
+        tmux attach -t "$session"
+    fi
 }
