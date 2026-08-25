@@ -118,6 +118,11 @@ function SudoRun() {
     # binds looser — `sudo a && b` runs b as the calling user.)
     print -r -- "$cmd" > "$cmdfile" || return 1
 
+    # Show what actually gets run as root. In the multi-arg form this is the
+    # re-quoted line, not the argv the caller typed, so it is worth seeing.
+    # stderr, because stdout carries the command's own output.
+    echo "SudoRun: running as root: $cmd" >&2
+
     # In the new tab: tee the combined output, then record the command's own exit
     # status. `\${pipestatus[1]}` is escaped so the tab's shell evaluates it, and
     # it is sudo's status rather than tee's. `sudo zsh …` is a single simple
@@ -175,6 +180,46 @@ function ci {
 # TabFocus: delegate to the iTerm tab-switcher helper (bound to ^Y).
 function TabFocus() {
     $SCRIPTDIR/iterm2-tab-focus.sh
+}
+
+# CloseTabsLeft [n]
+# Close the n tabs immediately to the LEFT of the current tab in the current
+# iTerm2 window (default 1). Never closes more than exist to the left, and never
+# touches the current tab or anything to its right.
+# Note: iTerm may still pop its "close session with a running job?" confirmation
+# if that preference is on.
+function CloseTabsLeft() {
+    local n="${1:-1}"
+    case "$n" in
+        ''|*[!0-9]*) echo "usage: CloseTabsLeft [n]" >&2; return 2 ;;
+    esac
+    osascript - "$n" <<'EOF'
+on run argv
+    set n to (item 1 of argv) as integer
+    tell application "iTerm2"
+        tell current window
+            -- iTerm2's tab has no usable `index` property, so find the current
+            -- tab by matching its current session's id.
+            set curId to id of current session of current tab
+            set idx to 0
+            set i to 0
+            repeat with t in tabs
+                set i to i + 1
+                if (id of current session of t) is curId then set idx to i
+            end repeat
+            if idx is 0 then return "0"
+            set toClose to idx - 1
+            if n < toClose then set toClose to n
+            -- Closing tab 1 each time shifts the rest left, so repeating it
+            -- eats exactly the tabs left of the original current tab.
+            repeat toClose times
+                close tab 1
+            end repeat
+            return (toClose as text)
+        end tell
+    end tell
+end run
+EOF
 }
 
 # alllisten: list every listening TCP socket on the machine (needs sudo).
@@ -266,6 +311,44 @@ findpgid() {
     # PID, PGID, comm for each match; print where pid == pgid (group leader)
     ps -Ao pid,pgid,comm | awk -v IGNORECASE=1 -v n="$1" \
         '$3 ~ n && $1 == $2 { print $1 }'
+}
+
+# mdname [-i DIR] <glob>: Spotlight search by FILE NAME, with real glob
+# semantics, case-insensitive. Defaults to the current directory.
+#   mdname '*.pdf'
+#   mdname -i ~/Documents '*report*.pdf'
+# Why not plain mdfind: `mdfind -name X` matches word *prefixes* (so `-name
+# port` never finds `xreportx.pdf`), and `kMDItemFSName == "a*b"` honours only
+# a leading/trailing '*' — an internal '*' or a '?' silently drops matches.
+# So narrow with the pattern's longest literal chunk (index-side, fast), then
+# match the basenames here with the glob translated to a regex.
+# Only Spotlight-indexed paths are searchable: /private/tmp and other excluded
+# volumes always come back empty — use `find` there.
+function mdname() {
+    local dir="."
+    if [ "$1" = "-i" ]; then dir="$2"; shift 2; fi
+    local pat="$1"
+    if [ -z "$pat" ]; then
+        echo "usage: mdname [-i DIR] <glob>   e.g. mdname '*report*.pdf'" >&2
+        return 1
+    fi
+
+    # longest run of literal (non-wildcard) chars -> the mdfind predicate
+    # (empty for a pattern like '*' gives "**", which matches everything —
+    # a lone "*" matches nothing, so don't "simplify" that)
+    local rest="$pat" seg longest=""
+    while [ -n "$rest" ]; do
+        seg="${rest%%[*?]*}"
+        if [ "$seg" = "$rest" ]; then rest=""; else rest="${rest#"$seg"?}"; fi
+        [ ${#seg} -gt ${#longest} ] && longest="$seg"
+    done
+
+    # glob -> ERE: escape the metachars, then '*' -> [^/]* and '?' -> [^/]
+    local rx
+    rx=$(printf '%s' "$pat" | sed -e 's/[\\.[()|^$+{}]/\\&/g' \
+                                  -e 's/\*/[^\/]*/g' -e 's/?/[^\/]/g')
+    mdfind -onlyin "$dir" "kMDItemFSName == \"*$longest*\"c" 2>/dev/null |
+        grep -iE "/$rx\$"
 }
 
 # stayawake [duration]: keep the Mac awake (prevent display, idle, and system
