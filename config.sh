@@ -9,4 +9,4 @@
 
 # Enable shell keybindings (Alt+arrows, ^X/^B/^Y/^Q).
 # Set to 1 to activate the bindkey block in common.sh.
-export SCRIPTS_KEYBINDINGS=1
+#export SCRIPTS_KEYBINDINGS=1
