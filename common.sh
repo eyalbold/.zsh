@@ -618,3 +618,18 @@ function tmuxatt() {
         tmux attach -t "$session"
     fi
 }
+# add-to-path <dir> — prepend a dir to PATH now and persist it by appending an
+# export line to this file. Skips if the dir is already on PATH.
+add-to-path() {
+    local dir="$1"
+    [[ -n "$dir" ]] || { echo "usage: add-to-path <dir>" >&2; return 1; }
+    dir="${dir:A}"
+    [[ -d "$dir" ]] || { echo "add-to-path: not a directory: $dir" >&2; return 1; }
+    if [[ ":$PATH:" == *":$dir:"* ]]; then
+        echo "add-to-path: already on PATH: $dir"
+        return 0
+    fi
+    export PATH="$dir:$PATH"
+    printf 'export PATH="%s:$PATH"\n' "$dir" >> ~/.zshrc
+    echo "add-to-path: added $dir (persisted to ~/.zshrc)"
+}
