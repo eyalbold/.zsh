@@ -62,22 +62,7 @@ else
     echo "==> Appended source line to $RC"
 fi
 
-# -- 4. symlink claude-sandboxed into ~/.local/bin ---------------------------
-mkdir -p "$BIN_DIR"
-if [ -L "$BIN_LINK" ] && [ "$(readlink "$BIN_LINK")" = "$BIN_TARGET" ]; then
-    echo "==> $BIN_LINK already points to $BIN_TARGET. Nothing to do."
-elif [ -e "$BIN_LINK" ] || [ -L "$BIN_LINK" ]; then
-    echo "!! $BIN_LINK exists and points somewhere else. Leaving it alone." >&2
-    echo "   Remove it and re-run if you want the installer to manage it." >&2
-else
-    ln -s "$BIN_TARGET" "$BIN_LINK"
-    echo "==> Linked $BIN_LINK -> $BIN_TARGET"
-fi
-
-case ":${PATH:-}:" in
-    *":$BIN_DIR:"*) ;;
-    *) echo "Note: $BIN_DIR is not on \$PATH. Add it to your rc if you want the symlink to be usable." ;;
-esac
-
 echo
-echo "Done. Reload your shell:  exec \"\$SHELL\" -l"
+
+echo "Done. Reloading your shell"
+exec "$SHELL" -l
