@@ -9,6 +9,7 @@ Shell helpers sourced from `~/.bashrc` / `~/.zshrc` via `common.sh`, plus a coup
 | `common.sh` | sourced | Aliases, keybindings, and helper functions for the interactive shell. |
 | `claude-sandboxed` | executable | Sandboxed wrapper around the Claude Code CLI (aliased to `cl` / `cc`). |
 | `install.sh` | executable | One-shot installer — clones the repo to `~/scripts` and wires `common.sh` into the user's shell rc. |
+| `bold.sh` | sourced | Bold-only helpers: the BoldTransparentProxy session controls, `BOLD_REPO_ROOT`, `ResearchJupyter`. Auto-sourced by `common.sh` when present. |
 
 ## Installation
 
@@ -72,6 +73,21 @@ echo '. ~/scripts/common.sh' >> ~/.zshrc   # or ~/.bashrc
 ### Command pickers
 - **`QuickSelList`** — fzf over `~/temp/quicksel_list.tsv` (description⇥cmd lines, parsed by `quicksel_list.sh`). Accepts piped stdin too. Bound to `^X`.
 - **`QuickSelListExample`** — demo that pipes two entries into `QuickSelList`.
+
+### Bold (`bold.sh`)
+- **`proxystart` / `proxykill [-d]` / `proxystatus`** — drive the BoldTransparentProxy *session* (the system extension itself is loaded by `sysextd`). `proxykill -d` also boots out the watchdog LaunchDaemon, which otherwise restarts the session within 5 min.
+- **`logproxy`** — stream the extension's own forward/pass-through decisions.
+- **`ResearchJupyter`** — Jupyter Lab in `~/gitproj/bold-research`, in its own Terminal window.
+
+### Claude reversing (`claude.sh`)
+- **`proxyclaude` / `burpclaude`** — relaunch Claude Desktop against `localhost:9111` / through Burp.
+- **`startclaudecode` / `proxyclaudecode` / `burpclaudecode`** — the Claude Code CLI, plain / proxied / through Burp.
+- **`scl`** — run the patched `cli_modified.js` under `bun`, out of `$CLAUDE_REV_PATH`.
+
+### Notebooks
+Defined only when `$NOTEBOOK_FOLDER` (default `~/notebooks`, override in `config.sh`) exists:
+- **`ClaudeDashboard`** — start the Qt session dashboard via its LaunchAgent, installing it on first run.
+- `$NOTEBOOK_FOLDER/bold_common.sh` is sourced from there: **`killclaude`** / **`startclaude`**, **`freshclaude [-n]`** (drop Claude Desktop's cached JS/CSS chunks — they are `immutable`, so a warm cache means no traffic for a proxy to see — and relaunch; `-n` is a dry run), **`killclaudecode`**, **`RunClaudeBedRock`** (run the CLI against Bedrock).
 
 ### Misc
 - **`updateprofile`** — `git pull` in `~/scripts` to fetch the latest version of this repo. Run `exec "$SHELL" -l` afterwards to pick up changes.

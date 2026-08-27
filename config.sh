@@ -10,3 +10,7 @@
 # Enable shell keybindings (Alt+arrows, ^X/^B/^Y/^Q).
 # Set to 1 to activate the bindkey block in common.sh.
 #export SCRIPTS_KEYBINDINGS=1
+
+# Where the notebooks repo is checked out. common.sh only defines the helpers
+# that need it (e.g. ClaudeDashboard) when this directory exists.
+# export NOTEBOOK_FOLDER="$HOME/notebooks"

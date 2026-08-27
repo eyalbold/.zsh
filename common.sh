@@ -18,6 +18,34 @@ export SCRIPTDIR
 # -- Optional user config -----------------------------------------------------
 [ -f "$SCRIPTDIR/config.sh" ] && . "$SCRIPTDIR/config.sh"
 
+# -- Optional add-on modules --------------------------------------------------
+# Machine-specific helper sets. Sourced after config.sh so they can read its
+# settings; silently skipped on a machine where the file isn't checked out.
+for _mod in bold.sh claude.sh; do
+    [ -f "$SCRIPTDIR/$_mod" ] && . "$SCRIPTDIR/$_mod"
+done
+unset _mod
+
+# -- Notebooks checkout -------------------------------------------------------
+# Everything below that lives in the notebooks repo hangs off this. Override in
+# config.sh if the checkout is somewhere other than ~/notebooks.
+NOTEBOOK_FOLDER="${NOTEBOOK_FOLDER:-$HOME/notebooks}"
+export NOTEBOOK_FOLDER
+
+if [ -d "$NOTEBOOK_FOLDER" ]; then
+    # Claude launchers that live in the notebooks repo (killclaude, startclaude,
+    # freshclaude, killclaudecode, RunClaudeBedRock).
+    [ -f "$NOTEBOOK_FOLDER/bold_common.sh" ] && . "$NOTEBOOK_FOLDER/bold_common.sh"
+
+    # Start the Qt session dashboard via its LaunchAgent (no-op if already up).
+    # If the agent isn't installed yet, install_launchd.sh writes the plist and
+    # starts it.
+    function ClaudeDashboard() {
+        launchctl kickstart "gui/$(id -u)/com.claude-fleet.gui" 2>/dev/null \
+            || "$NOTEBOOK_FOLDER/claude-session-monitor/install_launchd.sh"
+    }
+fi
+
 # -- Aliases ------------------------------------------------------------------
 # cl: shortcut for the sandboxed Claude Code wrapper.
 # cc: same wrapper but resumes the most recent session.
@@ -61,26 +89,29 @@ function ClaudeZi() {
     "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)dir} && claude"
 }
 
-# SudoRun: run a command with sudo in a NEW terminal tab, so the password prompt
-# is interactive. Useful when the caller has no TTY for sudo to prompt on — an
-# agent, a hook, a piped script — where `sudo -n` just fails with
+# SudoRun: run a command with sudo in a NEW terminal window, so the password
+# prompt is interactive. Useful when the caller has no TTY for sudo to prompt on
+# — an agent, a hook, a piped script — where `sudo -n` just fails with
 # "a password is required".
 #
 #   SudoRun launchctl bootstrap system /Library/LaunchDaemons/foo.plist
 #   SudoRun "cp a.plist /Library/LaunchDaemons/ && launchctl bootstrap system /Library/LaunchDaemons/a.plist"
 #
-# The command's combined stdout+stderr is tee'd to a log file, so it stays
-# visible in the tab AND is readable by the caller. SudoRun BLOCKS until the
-# command finishes, then prints that output on its own stdout and exits with the
-# command's status — so an agent that can't type the root password still gets the
-# result. sudo prompts on /dev/tty, so the password prompt is unaffected by the pipe.
+# The command line being run as root is echoed in that window before the password
+# prompt, so it is visible to whoever types the password. The command's output goes
+# to that window and nowhere else — it is NOT captured, so the caller gets the exit
+# status but not the output. The window closes as
+# soon as the command finishes, which means a fast command leaves nothing on
+# screen; if you need to read the output, redirect it yourself
+# (`SudoRun "foo > /tmp/out 2>&1"`) or have the command pause.
 #
-# The new tab stays open afterwards so output remains on screen; close it yourself.
+# SudoRun BLOCKS until the command finishes and exits with its status.
 #
 # Env:
 #   SUDORUN_TIMEOUT   seconds to wait for completion (default 300); on timeout
-#                     returns 124 after dumping whatever was logged so far.
-#   SUDORUN_LOG_DIR   log directory (default ${TMPDIR:-/tmp}/sudorun)
+#                     returns 124 and leaves the window open.
+#   SUDORUN_LOG_DIR   state directory for the command/exit-status files
+#                     (default ${TMPDIR:-/tmp}/sudorun)
 function SudoRun() {
     if [ $# -eq 0 ]; then
         echo "usage: SudoRun <command...>" >&2
@@ -107,7 +138,6 @@ function SudoRun() {
         return 1
     fi
     local stamp="$(date +%Y%m%d-%H%M%S)-$$"
-    local log="$logdir/$stamp.log"
     local rcfile="$logdir/$stamp.rc"
     local cmdfile="$logdir/$stamp.cmd"
 
@@ -119,21 +149,22 @@ function SudoRun() {
     print -r -- "$cmd" > "$cmdfile" || return 1
 
     # Show what actually gets run as root. In the multi-arg form this is the
-    # re-quoted line, not the argv the caller typed, so it is worth seeing.
-    # stderr, because stdout carries the command's own output.
-    echo "SudoRun: running as root: $cmd" >&2
+    # re-quoted line, not the argv the caller typed, so it is worth seeing. It is
+    # echoed as the first command IN THE WINDOW — ahead of the password prompt,
+    # where whoever is typing the password can see it — rather than back here.
+    local banner="SudoRun: running as root: $cmd"
 
-    # In the new tab: tee the combined output, then record the command's own exit
-    # status. `\${pipestatus[1]}` is escaped so the tab's shell evaluates it, and
-    # it is sudo's status rather than tee's. `sudo zsh …` is a single simple
-    # command, so the pipe captures all of it. Writing $rcfile last doubles as the
-    # completion marker — by then tee has flushed $log.
-    if ! "$SCRIPTDIR/open_in_new_tab.sh" \
-        "cd ${(q)PWD} && sudo zsh ${(q)cmdfile} 2>&1 | tee ${(q)log}; print -r -- \${pipestatus[1]} > ${(q)rcfile}"
+    # In the new window: announce, run it, record the exit status, then `exit` so
+    # the shell ends. `\$?` is escaped so the window's shell evaluates it. Writing
+    # $rcfile is the completion marker we poll for. ${(qq)banner} single-quotes the
+    # banner so it survives the trip through AppleScript with minimal backslashes.
+    local winid
+    if ! winid="$("$SCRIPTDIR/open_in_new_window.sh" \
+        "print -r -- ${(qq)banner}; cd ${(q)PWD} && sudo zsh ${(q)cmdfile}; print -r -- \$? > ${(q)rcfile}; exit")"
     then
         # Without this check a failed osascript would leave us waiting out the
-        # whole timeout for a tab that never opened.
-        echo "SudoRun: failed to open a terminal tab — command not run" >&2
+        # whole timeout for a window that never opened.
+        echo "SudoRun: failed to open a terminal window — command not run" >&2
         return 1
     fi
 
@@ -143,23 +174,50 @@ function SudoRun() {
     while [ ! -s "$rcfile" ]; do
         if [ "$waited" -ge "$timeout" ]; then
             echo "SudoRun: timed out after ${timeout}s (password never entered?)" >&2
-            [ -f "$log" ] && cat "$log"
-            echo "SudoRun: partial log: $log" >&2
+            echo "SudoRun: leaving the window open" >&2
             return 124
         fi
         sleep 1
         waited=$((waited + 1))
     done
 
-    [ -f "$log" ] && cat "$log"
+    # `exit` above ends the shell, but whether that closes the window is a
+    # profile setting — close it explicitly so it never lingers. Best effort:
+    # if the profile already closed it, there is nothing left to find.
+    _sudorun_close_window "$winid"
+
     local rc
     rc="$(cat "$rcfile")"
-    echo "SudoRun: exit ${rc} (log: $log)" >&2
-    # Guard against a non-numeric marker (e.g. tab killed mid-write).
+    echo "SudoRun: exit ${rc}" >&2
+    # Guard against a non-numeric marker (e.g. window killed mid-write).
     case "$rc" in
         ''|*[!0-9]*) return 125 ;;
         *) return "$rc" ;;
     esac
+}
+
+# Close the window SudoRun opened, by the id open_in_new_window.sh reported.
+# Errors are swallowed: the window is usually gone already.
+function _sudorun_close_window() {
+    local winid="$1"
+    [ -n "$winid" ] || return 0
+    case "${TERM_PROGRAM:-}" in
+        Apple_Terminal)
+            osascript -e "tell application \"Terminal\"
+                    try
+                        close (first window whose id is ${winid})
+                    end try
+                end tell" >/dev/null 2>&1
+            ;;
+        *)
+            osascript -e "tell application \"iTerm\"
+                    try
+                        close (first window whose id is \"${winid}\")
+                    end try
+                end tell" >/dev/null 2>&1
+            ;;
+    esac
+    return 0
 }
 
 # Lower-case spelling, since the function reads like a command and zsh is
