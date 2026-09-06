@@ -691,3 +691,60 @@ add-to-path() {
     printf 'export PATH="%s:$PATH"\n' "$dir" >> ~/.zshrc
     echo "add-to-path: added $dir (persisted to ~/.zshrc)"
 }
+
+# PreCommitOn [<commit>] — run the repo's pre-commit hooks on the files changed
+# by a given commit (default HEAD). Note: hooks run on the *current* contents
+# of those files, not the versions inside the commit.
+# PreCommitOn --from <commit> [<to>] — run on everything changed between
+# <commit> and <to> (default master).
+function PreCommitOn() {
+    if [[ "$1" == "--from" ]]; then
+        local from="$2" to=master rest=3
+        [[ -n "$from" ]] || { echo "usage: PreCommitOn --from <commit> [<to>]" >&2; return 1; }
+        if [[ -n "$3" && "$3" != -* ]]; then to="$3"; rest=4; fi
+        pre-commit run --from-ref "$from" --to-ref "$to" "${@:$rest}"
+        return
+    fi
+    local commit="${1:-HEAD}"
+    commit=$(git rev-parse --verify "$commit^{commit}" 2>/dev/null) \
+        || { echo "PreCommitOn: not a commit: ${1:-HEAD}" >&2; return 1; }
+    if git rev-parse --verify -q "$commit^" >/dev/null 2>&1; then
+        pre-commit run --from-ref "$commit^" --to-ref "$commit" "${@:2}"
+    else
+        # root commit has no parent — run on all its files
+        git diff-tree --no-commit-id --name-only -r --root "$commit" \
+            | xargs pre-commit run "${@:2}" --files
+    fi
+}
+
+# WtGo — fuzzy-pick a git worktree of the current repo (fzf) and cd into it.
+# With an argument, filters non-interactively: cd's straight in when exactly
+# one worktree matches, otherwise opens fzf pre-filled with that query.
+# Alias: wt
+function WtGo() {
+    git rev-parse --git-dir >/dev/null 2>&1 || { echo "WtGo: not in a git repo" >&2; return 1; }
+    local list dir
+    # path<TAB>branch (or detached HEAD sha) for each worktree
+    list=$(git worktree list | sed -E 's/[[:space:]]+[0-9a-f]{7,}[[:space:]]+/\t/')
+    [[ -n "$list" ]] || { echo "WtGo: no worktrees" >&2; return 1; }
+    dir=$(printf '%s\n' "$list" \
+        | fzf --query="${1:-}" --select-1 --exit-0 --with-nth=1.. --delimiter='\t' \
+              --preview 'git -C {1} status -sb; echo; git -C {1} log --oneline -10' \
+              --preview-window=right:55%:wrap \
+        | cut -f1) || return 0
+    [[ -n "$dir" ]] || return 0
+    cd "$dir" || return 1
+}
+alias wt=WtGo
+
+# PrBranch <pr-number> — print the head branch of a GitHub PR in the current repo.
+# Accepts "123", "#123" or a PR URL. Needs `gh`.
+#   PrBranch 272                 -> feature/log-1055-...
+#   git checkout "$(PrBranch 272)"
+#   wt "$(PrBranch 272)"         -> jump to the worktree holding that branch
+function PrBranch() {
+    local pr="${1#\#}"
+    [[ -n "$pr" ]] || { echo "usage: PrBranch <pr-number>" >&2; return 1; }
+    command -v gh >/dev/null 2>&1 || { echo "PrBranch: gh not installed" >&2; return 1; }
+    gh pr view "$pr" --json headRefName -q .headRefName
+}
