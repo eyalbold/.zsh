@@ -748,3 +748,13 @@ function PrBranch() {
     command -v gh >/dev/null 2>&1 || { echo "PrBranch: gh not installed" >&2; return 1; }
     gh pr view "$pr" --json headRefName -q .headRefName
 }
+
+# PrBase [<pr-number>] — print the commit a PR branches off (merge-base of its
+# head with its base branch). No argument: the PR of the current branch.
+# The work is in pr-base.sh so nvim's :PrDiff can call it without sourcing this.
+#   PrBase                         -> 1a2b3c4d...
+#   git diff "$(PrBase --range 272)" -> the whole PR as one diff (--range gives
+#   <merge-base>..<pr-head>; a bare merge-base would diff against the worktree)
+function PrBase() {
+    "$SCRIPTDIR/pr-base.sh" "$@"
+}
