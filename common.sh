@@ -63,6 +63,7 @@ if [ "${SCRIPTS_KEYBINDINGS:-0}" = "1" ] && [ -n "$ZSH_VERSION" ]; then
     bindkey -s '^E' 'ClaudeZi\n'    # fuzzy search recent folders (using zoxide), open claude there
     bindkey -s '^Y' 'TabFocus\n'    # focus a specific iTerm tab
     bindkey -s '^Q' 'zi\n'          # interactive zoxide
+    bindkey -s '^W' 'WtGo\n'        # fuzzy-pick a git worktree and cd into it
 fi
 
 function EnableShortcuts()
@@ -87,6 +88,13 @@ function ClaudeZi() {
     local dir
     dir=$(zoxide query -l | fzf --preview 'ls -la {}' --preview-window=right:50%:wrap) || return 0
     "$SCRIPTDIR/open_in_new_tab.sh" "cd ${(q)dir} && claude"
+}
+
+# ClaudeTrust: mark every project folder already listed in Claude Code's global
+# config (~/.claude.json) as trusted, so it stops asking the trust dialog and
+# honors each repo's .claude/settings.json. Dry run by default; --apply writes.
+function ClaudeTrust() {
+    python3 "$SCRIPTDIR/claude-trust.py" "$@"
 }
 
 # SudoRun: run a command with sudo in a NEW terminal window, so the password
@@ -284,6 +292,10 @@ EOF
 function alllisten() {
     lsof -nP -iTCP -sTCP:LISTEN
 }
+function killjupyter()
+{
+    ps aux | grep -i jupyter | grep -v grep | awk '{print $2}' | xargs kill
+}
 
 # killport <port> [-9|--force]
 # Kill every process listening on <port>. Default signal is TERM; pass -9
@@ -369,6 +381,32 @@ findpgid() {
     # PID, PGID, comm for each match; print where pid == pgid (group leader)
     ps -Ao pid,pgid,comm | awk -v IGNORECASE=1 -v n="$1" \
         '$3 ~ n && $1 == $2 { print $1 }'
+}
+
+# Top processes by CPU and memory, averaged over a sampling window (default 30s).
+#   topprocs [n] [seconds]
+topprocs() {
+    local n="${1:-10}"
+    local secs="${2:-30}"
+    local tmp1 tmp2
+    tmp1=$(mktemp) && tmp2=$(mktemp) || return 1
+
+    ps -Aceo pid,pcpu,pmem,comm > "$tmp1"
+    sleep "$secs"
+    ps -Aceo pid,pcpu,pmem,comm > "$tmp2"
+
+    print "== Top $n by CPU (avg over ${secs}s) =="
+    awk 'NR==FNR { if ($1 ~ /^[0-9]+$/) cpu[$1]=$2; next }
+         $1 ~ /^[0-9]+$/ && $1 in cpu { $2=($2+cpu[$1])/2; printf "%-8s %6.1f %6s   %s\n", $1, $2, $3, $4 }' \
+        "$tmp1" "$tmp2" | sort -k2 -rn | head -n "$n"
+    print
+
+    print "== Top $n by Memory (avg over ${secs}s) =="
+    awk 'NR==FNR { if ($1 ~ /^[0-9]+$/) mem[$1]=$3; next }
+         $1 ~ /^[0-9]+$/ && $1 in mem { $3=($3+mem[$1])/2; printf "%-8s %6.1f %6s   %s\n", $1, $3, $2, $4 }' \
+        "$tmp1" "$tmp2" | sort -k2 -rn | head -n "$n"
+
+    rm -f "$tmp1" "$tmp2"
 }
 
 # mdname [-i DIR] <glob>: Spotlight search by FILE NAME, with real glob
@@ -471,6 +509,24 @@ function stayawake() {
     fi
 }
 
+# fnkeys [on|off|status]: make F1–F12 act as standard function keys (no Fn) system-wide.
+# No arg toggles. Same as System Settings > Keyboard > "Use F1, F2… as standard function keys".
+function fnkeys() {
+    local cur
+    cur=$(defaults read -g com.apple.keyboard.fnState 2>/dev/null || echo 0)
+    case "${1:-toggle}" in
+        status) [ "$cur" = 1 ] && echo "fnkeys: on (F-keys standard)" || echo "fnkeys: off (F-keys are media keys)"; return ;;
+        on)  cur=1 ;;
+        off) cur=0 ;;
+        toggle) [ "$cur" = 1 ] && cur=0 || cur=1 ;;
+        *) echo "usage: fnkeys [on|off|status]" >&2; return 2 ;;
+    esac
+    defaults write -g com.apple.keyboard.fnState -bool "$([ "$cur" = 1 ] && echo true || echo false)"
+    # apply immediately, otherwise it only takes effect after logout
+    /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+    fnkeys status
+}
+
 function zudo() {
   sudo -E zsh -c "source $HOME/.zshrc ; $*"
 }
@@ -488,7 +544,7 @@ function zshdo() {
 #   echo "summarize this" | askclaude
 #   cat file.py | askclaude "explain this code"
 function askclaude() {
-    local flags=(--model sonnet --permission-mode auto)
+    local flags=(--model sonnet --effort medium --permission-mode auto)
     if [ -t 0 ]; then
         # No piped input: question must be in the arguments.
         if [ -z "$1" ]; then
@@ -757,4 +813,44 @@ function PrBranch() {
 #   <merge-base>..<pr-head>; a bare merge-base would diff against the worktree)
 function PrBase() {
     "$SCRIPTDIR/pr-base.sh" "$@"
+}
+
+# ZshStartTrace [capture-file]: find what makes a new interactive zsh slow to
+# start. Runs eslogger (Endpoint Security, needs root — sudo prompts here) to
+# record exec/fork/exit/open events, starts a fresh `zsh -il`, then prints a
+# timeline of what that shell and its children ran and opened, with the gaps
+# marked, plus the slowest child processes. Parsing: zsh-start-trace.py
+# (re-run it with -a to include opens under /System, /usr/lib, ...).
+# eslogger silently produces nothing unless the terminal app has Full Disk
+# Access (System Settings > Privacy & Security).
+function ZshStartTrace() {
+    local out=${1:-${TMPDIR:-/tmp}/zsh-start-trace-$(date +%Y%m%d-%H%M%S).ndjson}
+    local pidfile="$out.pid"
+    sudo -v || return 1
+    sudo eslogger --format json exec fork exit open > "$out" 2>/dev/null &
+    local eslog=$!
+    sleep 2   # let eslogger subscribe before the shell starts
+    # the child records its own pid so the parser can pick out its process tree
+    ZSH_TRACE_PIDFILE=$pidfile zsh -il -c 'print -r -- $$ > "$ZSH_TRACE_PIDFILE"'
+    sleep 1
+    sudo kill -INT $eslog 2>/dev/null
+    wait $eslog 2>/dev/null
+    local zpid
+    zpid=$(<"$pidfile") && rm -f "$pidfile"
+    echo "capture: $out (root zsh pid $zpid)"
+    python3 "$SCRIPTDIR/zsh-start-trace.py" "$out" "$zpid"
+}
+
+# MyPrs — list my open PRs in bold-application and bold-agent, one URL per line.
+#   MyPrs            -> "<url>  <title>" per PR
+#   MyPrs -u         -> URLs only (pipe to pbcopy to send them somewhere)
+function MyPrs() {
+    command -v gh >/dev/null 2>&1 || { echo "MyPrs: gh not installed" >&2; return 1; }
+    local fmt='{{range .}}{{.url}}  {{.title}}{{"\n"}}{{end}}'
+    [[ "$1" == "-u" ]] && fmt='{{range .}}{{.url}}{{"\n"}}{{end}}'
+    local repo
+    for repo in bold-dev/bold-application bold-dev/bold-agent; do
+        gh pr list --repo "$repo" --author @me --state open \
+                   --json url,title --template "$fmt"
+    done
 }
